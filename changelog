@@ -1,0 +1,7 @@
+0.1 (2026-04-17)
+- Initial release
+- Adds RsyncMetricsService: injects rsyncFiles, rsyncBytes, rsyncDuration
+  into archive records when record_stats=true is set in [[RSYNC]]
+- Automatic archive schema extension on first run
+- Staleness guard: injects NULL if no successful upload within 2x archive_interval
+- Requires rsyncupload.py patch (record_stats option) — see PR or apply manually
