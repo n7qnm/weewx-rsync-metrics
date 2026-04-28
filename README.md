@@ -1,81 +1,86 @@
 # weewx-rsync-metrics
 
-Records rsync upload statistics as first-class observations in the weewx
-archive database, making them available in skins, plots, and daily summaries.
+Captures rsync upload statistics (file count, bytes transferred, duration)
+and routes them to one or more outputs. Requires **no changes to weewx core** —
+implemented entirely as a Python logging handler intercepting log messages
+from `weeutil.rsyncupload`.
 
-## Fields
+## Outputs
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `rsyncFiles` | INTEGER | Files transferred per upload cycle |
-| `rsyncBytes` | INTEGER | Bytes transferred per upload cycle |
-| `rsyncDuration` | REAL | Upload duration in seconds |
+| Output | Description |
+|--------|-------------|
+| `archive` | Injects stats into weewx archive records as `rsyncFiles`, `rsyncBytes`, `rsyncDuration`. Daily summaries (min/max/avg) generated automatically. |
+| `csv` | Appends a timestamped row to a CSV file after each upload cycle. |
+| `mqtt` | Publishes a JSON payload to an MQTT broker after each upload cycle. |
 
-Because StdReport runs *after* each archive record is committed, the values
-in record N reflect the upload that ran after record N-1 — a one archive
-interval lag. This is correct and expected behavior.
-
-Daily summary tables (`archive_day_rsync*`) are maintained automatically by
-weewx's DaySummaryManager, giving you min/max/avg per day for free.
-
-## Requirements
-
-- weewx 5.x
-- The `record_stats` patch applied to `weeutil/rsyncupload.py`
-  (submit as a PR, or apply `rsyncupload.patch` manually)
+One or more outputs can be enabled simultaneously.
 
 ## Installation
 
-### 1. Apply the rsyncupload patch
-
 ```bash
-# From your weewx source directory
-patch -p1 < rsyncupload.patch
-
-# Or for a package install, patch in-place:
-sudo patch /usr/share/weewx/weeutil/rsyncupload.py rsyncupload.patch
+weectl extension install https://github.com/n7qnm/weewx-rsync-metrics/releases/download/v0.2/weewx-rsync-metrics.tar.gz
 ```
 
-### 2. Install the extension
+No patches required. Restart weewx after installation.
 
-```bash
-weectl extension install weewx-rsync-metrics.tar.gz
-```
+## Configuration
 
-### 3. Enable record_stats in weewx.conf
+The installer adds a `[RsyncMetrics]` stanza to `weewx.conf` with all
+options and their defaults. Edit as needed:
 
 ```ini
-[StdReport]
-    [[RSYNC]]
-        record_stats = true
+[RsyncMetrics]
+    # One or more of: archive, csv, mqtt
+    output = archive
+
+    # csv output
+    csv_path = /var/log/weewx/rsync-metrics.csv
+
+    # mqtt output (requires: pip install paho-mqtt)
+    mqtt_host = localhost
+    mqtt_port = 1883
+    mqtt_user =
+    mqtt_password =
+    mqtt_tls = false
+    mqtt_topic = weather/weewx/rsync/metrics
+    mqtt_status_topic = weather/weewx/rsync/status
+    mqtt_client_id = weewx-rsync-metrics
 ```
 
-### 4. Restart weewx
+## MQTT payload
 
-```bash
-sudo systemctl restart weewx
+```json
+{
+  "rsyncFiles": 28,
+  "rsyncBytes": 173544,
+  "rsyncDuration": 0.87,
+  "timestamp": 1713393962
+}
 ```
 
-## Verification
+A Last Will and Testament message (`offline`) is published to
+`mqtt_status_topic` on disconnect, and `online` on connect. This enables
+Zabbix or other monitoring systems to detect if weewx stops running.
 
-After the first upload cycle, you should see in the logs:
+## Archive fields
 
-```
-rsync_metrics: service started (stale_threshold=600s)
-rsync_metrics: injecting files=28 bytes=173544 duration=0.87
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| `rsyncFiles` | INTEGER | Files transferred |
+| `rsyncBytes` | INTEGER | Bytes transferred |
+| `rsyncDuration` | REAL | Duration in seconds |
 
-Query the database directly to confirm:
+The archive schema is extended automatically on first run.
 
-```bash
-sqlite3 /var/lib/weewx/weewx.sdb \
-  "SELECT datetime(dateTime,'unixepoch','localtime'), rsyncFiles, rsyncBytes, rsyncDuration \
-   FROM archive ORDER BY dateTime DESC LIMIT 5;"
-```
+Because StdReport runs *after* each archive record is committed, values
+in record N reflect the upload that ran after record N-1 — a one archive
+interval lag. This is expected behavior.
+
+Daily summary tables (`archive_day_rsync*`) are maintained automatically,
+giving you `$day.rsyncDuration.max`, `$day.rsyncBytes.sum`, etc. in skins.
 
 ## Skin templates
 
-Current conditions:
 ```html
 <tr>
   <td class="label">$obs.label.rsyncDuration</td>
@@ -87,21 +92,13 @@ Current conditions:
 </tr>
 ```
 
-Daily summary:
-```html
-<!-- Max upload duration today -->
-<td>$day.rsyncDuration.max.format("%.2f s")</td>
-<!-- Total bytes uploaded today -->
-<td>$day.rsyncBytes.sum</td>
-```
-
 ## Manual schema migration
 
-If the automatic `ALTER TABLE` fails:
+If automatic `ALTER TABLE` fails:
 
 **SQLite:**
 ```sql
-sqlite3 /var/lib/weewx/weewx.sdb
+sqlite3 ~/weewx-data/archive/weewx.sdb
 ALTER TABLE archive ADD COLUMN rsyncFiles    INTEGER;
 ALTER TABLE archive ADD COLUMN rsyncBytes    INTEGER;
 ALTER TABLE archive ADD COLUMN rsyncDuration REAL;
@@ -114,11 +111,19 @@ ALTER TABLE archive ADD COLUMN rsyncBytes    INT;
 ALTER TABLE archive ADD COLUMN rsyncDuration FLOAT;
 ```
 
+## Verification
+
+After the first upload cycle, check the logs:
+
+```
+rsync_metrics: service started (outputs=['archive'] stale_threshold=600s)
+rsync_metrics: archive <- files=28 bytes=173544 duration=0.87
+```
+
 ## Uninstall
 
 ```bash
 weectl extension uninstall rsync-metrics
 ```
 
-Note: uninstalling the extension does not remove the archive columns.
-The data is preserved. Remove columns manually if desired.
+Archive columns and collected data are preserved on uninstall.

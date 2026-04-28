@@ -12,13 +12,26 @@ def loader():
 class RsyncMetricsInstaller(ExtensionInstaller):
     def __init__(self):
         super().__init__(
-            version='0.1',
+            version='0.2',
             name='rsync-metrics',
-            description='Records rsync upload statistics as archive observations',
-            author='Clay',
+            description='Captures rsync upload statistics via logging handler. '
+                        'No core patches required. Outputs to archive DB, CSV, and/or MQTT.',
+            author='Clay (N7QNM)',
             author_email='',
             data_services='user.rsync_metrics.RsyncMetricsService',
             config={
+                'RsyncMetrics': {
+                    'output': 'archive',
+                    'csv_path': '/var/log/weewx/rsync-metrics.csv',
+                    'mqtt_host': 'localhost',
+                    'mqtt_port': '1883',
+                    'mqtt_user': '',
+                    'mqtt_password': '',
+                    'mqtt_tls': 'false',
+                    'mqtt_topic': 'weather/weewx/rsync/metrics',
+                    'mqtt_status_topic': 'weather/weewx/rsync/status',
+                    'mqtt_client_id': 'weewx-rsync-metrics',
+                },
                 'StdReport': {
                     'Defaults': {
                         'Labels': {
@@ -29,7 +42,7 @@ class RsyncMetricsInstaller(ExtensionInstaller):
                             }
                         }
                     }
-                }
+                },
             },
             files=[
                 ('bin/user', ['bin/user/rsync_metrics.py']),

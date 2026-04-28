@@ -1,7 +1,10 @@
-0.1 (2026-04-17)
-- Initial release
-- Adds RsyncMetricsService: injects rsyncFiles, rsyncBytes, rsyncDuration
-  into archive records when record_stats=true is set in [[RSYNC]]
-- Automatic archive schema extension on first run
-- Staleness guard: injects NULL if no successful upload within 2x archive_interval
-- Requires rsyncupload.py patch (record_stats option) — see PR or apply manually
+0.2 (2026-04-24)
+- Rewritten to use a Python logging handler instead of core patches
+- Zero changes to weewx core required
+- Added CSV output option
+- Added MQTT output option (requires paho-mqtt)
+- All outputs configurable via [RsyncMetrics] in weewx.conf
+- 25 unit tests covering all output paths and edge cases
+
+0.1 (2026-04-20)
+- Initial release (required patches to rsyncupload.py and reportengine.py)
